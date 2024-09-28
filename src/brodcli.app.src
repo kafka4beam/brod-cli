@@ -1,0 +1,14 @@
+%% -*- mode:erlang -*-
+{application, brodcli, [
+    {description, "Apache Kafka Erlang client CLI"},
+    {vsn, "git"},
+    {registered, []},
+    {applications, [kernel, stdlib, brod]},
+    {env, []},
+    {mod, {brod, []}},
+    {modules, []},
+    {licenses, ["Apache License 2.0"]},
+    {links, [{"Github", "https://github.com/kafka4beam/brod-cli"}]},
+    {build_tools, ["rebar3"]},
+    {files, ["src", "rebar.config", "README.md", "LICENSE", "NOTICE", "Makefile"]}
+]}.
