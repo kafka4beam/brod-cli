@@ -343,7 +343,7 @@ main(Command, Doc, Args0, Stop) ->
         {true, ?LOG_LEVEL_QUIET}
     ],
     {true, LogLevel} = lists:keyfind(true, 1, LogLevels),
-    erlang:put(brod_cli_log_level, LogLevel),
+    erlang:put(brodcli_log_level, LogLevel),
     case IsHelp of
         true ->
             print(Doc);
@@ -371,7 +371,7 @@ main(Command, Doc, Args, Stop, LogLevel) ->
     case LogLevel =:= ?LOG_LEVEL_QUIET of
         true ->
             logger:add_handler(
-                brod_cli,
+                brodcli,
                 logger_std_h,
                 #{config => #{file => "brod.log"}, level => info}
             ),
@@ -581,7 +581,7 @@ run(?PIPE_CMD, Brokers, Topic, SockOpts, Args) ->
         {retry_delay, 100}
     ],
     {ok, ReaderPid} =
-        brod_cli_pipe:start_link(ReaderArgs),
+        brodcli_pipe:start_link(ReaderArgs),
     _ = erlang:monitor(process, ReaderPid),
     pipe(ReaderPid, SendFun, queue:new()).
 
@@ -1327,13 +1327,13 @@ logerr(Fmt, Args) ->
     io:put_chars(stderr(), io_lib:format("*** " ++ Fmt, Args)).
 
 verbose(Fmt, Args) ->
-    case erlang:get(brod_cli_log_level) >= ?LOG_LEVEL_VERBOSE of
+    case erlang:get(brodcli_log_level) >= ?LOG_LEVEL_VERBOSE of
         true -> logerr("[verbo]: " ++ Fmt, Args);
         false -> ok
     end.
 
 debug(Fmt, Args) ->
-    case erlang:get(brod_cli_log_level) >= ?LOG_LEVEL_DEBUG of
+    case erlang:get(brodcli_log_level) >= ?LOG_LEVEL_DEBUG of
         true -> logerr("[debug]: " ++ Fmt, Args);
         false -> ok
     end.

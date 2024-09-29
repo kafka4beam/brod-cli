@@ -24,6 +24,7 @@
 
 -define(KV(Key, Value), {Key, Value}).
 -define(TKV(Ts, Key, Value), {Ts, Key, Value}).
+-define(CLIENT_ID, "brodcli").
 
 -endif.
 

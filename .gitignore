@@ -16,3 +16,12 @@ deps
 _build/
 _checkouts/
 rebar.lock
+*.testdata
+_rebar.lock
+*.crashdump
+
+# vscode
+._rebar.lock
+
+# asdf
+.tool-versions
