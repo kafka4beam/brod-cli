@@ -38,3 +38,7 @@ dialyzer:
 .PHONY: fmt
 fmt:
 	@rebar3 fmt -w
+
+.PHONY: xref
+xref:
+	@rebar3 xref
