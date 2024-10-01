@@ -20,9 +20,9 @@ To start an Erlang REPL shell with all the `brod` APIs to play with, execute `bi
 
 ## TODO
 
-[ ] Use json module from Erlang/OTP 27 (replace jsone)
-[ ] Switch to https://github.com/jcomellas/getopt (replace optdoc)
-[ ] Eunit
-[ ] Dialyzer
-[ ] GitHub Action
-[ ] Publish Docker image
+- [ ] Use json module from Erlang/OTP 27 (replace jsone)
+- [ ] Switch to https://github.com/jcomellas/getopt (replace optdoc)
+- [ ] Eunit
+- [ ] Dialyzer
+- [ ] GitHub Action
+- [ ] Publish Docker image
