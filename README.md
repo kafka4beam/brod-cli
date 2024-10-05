@@ -2,6 +2,10 @@
 
 Kafka client command line interface based on [brod](https://github.com/kafka4beam/brod)
 
+Disclaimer: This script is NOT designed for use cases where fault-tolerance is a hard requirement.
+As it may crash when e.g. kafka cluster is temporarily unreachable,
+or (for fetch command) when the partition leader migrates to another broker in the cluster.
+
 ## Build
 
 ```
@@ -17,19 +21,6 @@ The release includes Erlang runtime (erts), but not guarenteed to be portable be
 In the release directory, `bin/bord` is the main command.
 
 To start an Erlang REPL shell with all the `brod` APIs to play with, execute `bin/brod-i console`.
-
-## brod-cli: A command line tool to interact with Kafka
-
-This will build a self-contained binary with brod application
-
-```bash
-make brod-cli
-_build/brod_cli/rel/brod/bin/brod -h
-```
-
-Disclaimer: This script is NOT designed for use cases where fault-tolerance is a hard requirement.
-As it may crash when e.g. kafka cluster is temporarily unreachable,
-or (for fetch command) when the partition leader migrates to another broker in the cluster.
 
 ## Examples (with `alias brod=_build/default/rel/brod/bin/brod`):
 
