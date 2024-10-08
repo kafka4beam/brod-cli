@@ -105,7 +105,6 @@ brod commits -b localhost:9092 -i the-group-id -t topic-name -o "0:10000" --prot
 
 ## TODO
 
-- [ ] Use json module from Erlang/OTP 27 (replace jsone)
 - [ ] Switch to https://github.com/jcomellas/getopt (replace optdoc)
 - [ ] Eunit
 - [ ] Dialyzer

@@ -937,7 +937,7 @@ format_metadata(Metadata, Format, IsList, IsToListUrp) ->
     Topics = format_topics(Topics1),
     case Format of
         json ->
-            JSON = jsone:encode([
+            JSON = json_encode([
                 {brokers, Brokers},
                 {topics, Topics},
                 {cluster_id, Cluster},
@@ -1403,6 +1403,21 @@ get_kafka_version() ->
             [Major, Minor | _] = string:tokens(Vsn, "."),
             {list_to_integer(Major), list_to_integer(Minor)}
     end.
+
+json_encode(TupleList) ->
+    json:encode(json_map(TupleList)).
+
+json_map(List) when is_list(List) ->
+    case lists:map(fun json_map/1, List) of
+        [{_,_} | _] = R->
+            maps:from_list(R);
+        R ->
+            R
+    end;
+json_map({Key, Value}) ->
+    {Key, json_map(Value)};
+json_map(X) ->
+    X.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
