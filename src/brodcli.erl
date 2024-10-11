@@ -1409,7 +1409,7 @@ json_encode(TupleList) ->
 
 json_map(List) when is_list(List) ->
     case lists:map(fun json_map/1, List) of
-        [{_,_} | _] = R->
+        [{_, _} | _] = R ->
             maps:from_list(R);
         R ->
             R
