@@ -106,6 +106,7 @@ brod commits -b localhost:9092 -i the-group-id -t topic-name -o "0:10000" --prot
 ## TODO
 
 - [ ] Switch to https://github.com/jcomellas/getopt (replace optdoc)
+- [ ] Print URP in RED color text
 - [ ] Eunit
 - [ ] Dialyzer
 - [ ] GitHub Action

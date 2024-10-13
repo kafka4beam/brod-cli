@@ -16,51 +16,14 @@
 
 -module(brodcli).
 
--export([main/1, main/2]).
+-export([main/1]).
+
+%% TODO: delete
+-export([main/4]).
 
 -include("brodcli.hrl").
 
--define(CLIENT, brodcli_client).
 -define(PROGNAME, "brod").
--define(RED, "\e[31m").
--define(RESET, "\e[39m").
-
-%% 'halt' is for escript, stop the vm immediately
-%% 'exit' is for testing, we want eunit or ct to be able to capture
--define(STOP(How), begin
-    try
-        brod:stop_client(?CLIENT)
-    catch
-        exit:{noproc, _} ->
-            ok
-    end,
-    _ = brod:stop(),
-    case How of
-        'halt' -> erlang:halt(?LINE);
-        'exit' -> erlang:exit(?LINE)
-    end
-end).
-
--define(MAIN_DOC,
-    "usage:\n"
-    "  brod -h|--help\n"
-    "  brod -v|--version\n"
-    "  brod <command> [options] [-h|--help] [--verbose|--debug]\n"
-    "\n"
-    "commands:\n"
-    "  meta:    Inspect topic metadata\n"
-    "  offset:  Inspect offsets\n"
-    "  fetch:   Fetch messages\n"
-    "  send:    Produce messages\n"
-    "  pipe:    Pipe file or stdin as messages to kafka\n"
-    "  groups:  List/describe consumer group\n"
-    "  commits: List/describe committed offsets\n"
-    "           or force overwrite existing commits\n"
-).
--define(MAIN_OPT, [
-    {help, $h, "help", ?undef, "Show usage"},
-    {version, $v, "version", ?undef, "Show version"}
-]).
 
 %% NOTE: bad indentation at the first line is intended
 -define(COMMAND_COMMON_OPTIONS,
@@ -82,29 +45,6 @@ end).
     "  --no-api-vsn-query     Do not query api version (for kafka 0.9 or earlier)\n"
     "                         Or set KAFKA_VERSION environment variable to 0.9 for\n"
     "                         the same effect\n"
-).
-
--define(META_CMD, "meta").
--define(META_DOC,
-    "usage:\n"
-    "  brod meta [options]\n"
-    "\n"
-    "options:\n"
-    "  -b,--brokers=<brokers> Comma separated host:port pairs\n"
-    "                         [default: localhost:9092]\n"
-    "  -t,--topic=<topic>     Topic name [default: *]\n"
-    "  -T,--text              Print metadata as aligned texts (default)\n"
-    "  -J,--json              Print metadata as JSON object\n"
-    "  -L,--list              List topics, no partition details,\n"
-    "                         Applicable only for --text option\n"
-    "  -U,--under-replicated  Display only under-replicated partitions\n"
-    ?COMMAND_COMMON_OPTIONS
-    "Text output schema (out of sync replicas are marked with *):\n"
-    "brokers <count>:\n"
-    "  <broker-id>: <endpoint>\n"
-    "topics <count>:\n"
-    "  <name> <count>: [[ERROR] [<reason>]]\n"
-    "    <partition>: <leader-broker-id> (replicas[*]...) [<error-reason>]\n"
 ).
 
 -define(OFFSET_CMD, "offset").
@@ -292,7 +232,6 @@ end).
 ).
 
 -define(DOCS, [
-    {?META_CMD, ?META_DOC},
     {?OFFSET_CMD, ?OFFSET_DOC},
     {?SEND_CMD, ?SEND_DOC},
     {?FETCH_CMD, ?FETCH_DOC},
@@ -301,17 +240,21 @@ end).
     {?COMMITS_CMD, ?COMMITS_DOC}
 ]).
 
--define(LOG_LEVEL_QUIET, 0).
--define(LOG_LEVEL_VERBOSE, 1).
--define(LOG_LEVEL_DEBUG, 2).
-
 -type log_level() :: non_neg_integer().
 
 -type command() :: string().
 
+opts() ->
+    [
+        {help, $h, "help", ?undef, "Show main command usage."},
+        {version, $v, "version", ?undef, "Show version."},
+        {verbose, ?undef, "verbose", ?undef, "Log verbosely."},
+        {debug, ?undef, "debug", ?undef, "Log debug info."}
+    ].
+
 main_usage() ->
-    getopt:usage(?MAIN_OPT, ?PROGNAME, "[command ...]"),
-    stdout(
+    getopt:usage(opts(), ?PROGNAME, "[command ...]"),
+    print(
         "commands:\n"
         "  meta:    Inspect topic metadata\n"
         "  offset:  Inspect offsets\n"
@@ -323,7 +266,9 @@ main_usage() ->
         "           or force overwrite existing commits\n"
     ).
 
-main(Args) ->
+main(Args0) ->
+    ok = set_log_level(Args0),
+    Args = Args0 -- ["--debug", "--verbose"],
     nomatch = main_help(Args),
     nomatch = version(Args),
     nomatch = cmd("meta", Args),
@@ -343,7 +288,7 @@ main(Args) ->
     halt(1).
 
 main_help(Args) ->
-    case find_bool(["-h", "--help"], Args) of
+    case find_bool_main_args(["-h", "--help"], Args) of
         true ->
             main_usage(),
             halt(0);
@@ -352,7 +297,7 @@ main_help(Args) ->
     end.
 
 version(Args) ->
-    case find_bool(["-v", "--version"], Args) of
+    case find_bool_main_args(["-v", "--version"], Args) of
         true ->
             print_version(),
             halt(0);
@@ -360,21 +305,39 @@ version(Args) ->
             nomatch
     end.
 
-find_bool([], _) ->
-    false;
-find_bool([Flag | Flags], Args) ->
-    do_find_bool(Flag, Args) orelse find_bool(Flags, Args).
+set_log_level(Args) ->
+    IsDebug = lists:member("--debug", Args),
+    IsVerbose = lists:member("--verbose", Args),
+    LogLevels = [
+        {IsDebug, ?LOG_LEVEL_DEBUG},
+        {IsVerbose, ?LOG_LEVEL_VERBOSE},
+        {true, ?LOG_LEVEL_QUIET}
+    ],
+    {true, LogLevel} = lists:keyfind(true, 1, LogLevels),
+    erlang:put(brodcli_log_level, LogLevel),
+    ok.
 
-do_find_bool(_, []) ->
+%% Find -o or --option style boolean flag before any non-option argument.
+%% like lists:member/2, but this function stops finding as soon as it
+%% sees a sub-command.
+%% e.g. `--version meta -b localhost --help' will return `true' for finding `--version'
+%% but will return `false' for finding `--help' (because `--help' is after command `meta'
+%% so it is considered to be the option for the sub-commnad, but not main.
+find_bool_main_args([], _) ->
     false;
-do_find_bool(Flag, [Arg | Args]) ->
+find_bool_main_args([Flag | Flags], Args) ->
+    do_find_bool_main_args(Flag, Args) orelse find_bool_main_args(Flags, Args).
+
+do_find_bool_main_args(_, []) ->
+    false;
+do_find_bool_main_args(Flag, [Arg | Args]) ->
     case Flag =:= Arg of
         true ->
             true;
         false ->
             case hd(Arg) of
                 $- ->
-                    do_find_bool(Flag, Args);
+                    do_find_bool_main_args(Flag, Args);
                 _ ->
                     false
             end
@@ -387,24 +350,16 @@ cmd(Cmd, Args) ->
 %% The thrid arg can be `exit' in tests.
 cmd(Cmd, [Cmd | Args], Stop) ->
     Module = list_to_atom("brodcli_" ++ Cmd),
-    ok = Module:main(Args),
-    ?STOP(Stop);
+    %% call Module:help if --help is found
+    case find_bool_main_args(["-h", "--help"], Args) of
+        true ->
+            ok = Module:help(),
+            ?STOP(Stop, 0);
+        false ->
+            ok = Module:main(Args, Stop)
+    end;
 cmd(_, _, _) ->
     nomatch.
-
--spec main([string()], halt | exit) -> no_return().
-main([Command | _] = Args, Stop) ->
-    case lists:keyfind(Command, 1, ?DOCS) of
-        {_, Doc} ->
-            main(Command, Doc, Args, Stop);
-        false ->
-            logerr("Unknown command: ~s\n", [Command]),
-            print(?MAIN_DOC),
-            ?STOP(Stop)
-    end;
-main(_, Stop) ->
-    print(?MAIN_DOC),
-    ?STOP(Stop).
 
 -spec main(command(), string(), [string()], halt | exit) -> _ | no_return().
 main(Command, Doc, Args0, Stop) ->
@@ -441,7 +396,7 @@ main(Command, Doc, Args, Stop, LogLevel) ->
             C1:E1:Stack1 ->
                 verbose("~p:~p\n~p\n", [C1, E1, Stack1]),
                 io:format(user, "~p~n", [{C1, E1, Stack1}]),
-                ?STOP(Stop)
+                ?STOP(Stop, 2)
         end,
     case LogLevel =:= ?LOG_LEVEL_QUIET of
         true ->
@@ -462,7 +417,7 @@ main(Command, Doc, Args, Stop, LogLevel) ->
     try
         Brokers = parse(ParsedArgs, "--brokers", fun parse_brokers/1),
         ConnConfig0 = parse_connection_config(ParsedArgs),
-        Paths = parse(ParsedArgs, "--ebin-paths", fun parse_paths/1),
+        Paths = parse(ParsedArgs, "--ebin-paths", fun(X) -> X end),
         NoApiQuery =
             parse(ParsedArgs, "--no-api-vsn-query", fun parse_boolean/1) orelse
                 ({0, 9} =:= get_kafka_version()),
@@ -474,30 +429,12 @@ main(Command, Doc, Args, Stop, LogLevel) ->
         throw:Reason when is_binary(Reason) ->
             %% invalid options etc.
             logerr([Reason, "\n"]),
-            ?STOP(Stop);
+            ?STOP(Stop, 1);
         C2:E2:Stack2 ->
             logerr("~p:~p\n~p\n", [C2, E2, Stack2]),
-            ?STOP(Stop)
+            ?STOP(Stop, 2)
     end.
 
-run(?META_CMD, Brokers, Topic, SockOpts, Args) ->
-    Topics =
-        case Topic of
-            %% fetch all topics
-            <<"*">> -> [];
-            _ -> [Topic]
-        end,
-    IsJSON = parse(Args, "--json", fun parse_boolean/1),
-    IsText = parse(Args, "--text", fun parse_boolean/1),
-    Format = kf(true, [
-        {IsJSON, json},
-        {IsText, text},
-        {true, text}
-    ]),
-    IsList = parse(Args, "--list", fun parse_boolean/1),
-    IsUrp = parse(Args, "--under-replicated", fun parse_boolean/1),
-    {ok, Metadata} = brod:get_metadata(Brokers, Topics, SockOpts),
-    format_metadata(Metadata, Format, IsList, IsUrp);
 run(?OFFSET_CMD, Brokers, Topic, SockOpts, Args) ->
     Partition = parse(Args, "--partition", fun
         ("all") -> all;
@@ -999,174 +936,7 @@ parse_size(Size) ->
         N -> int(lists:reverse(N))
     end.
 
-format_metadata(Metadata, Format, IsList, IsToListUrp) ->
-    Brokers = kf(brokers, Metadata),
-    Topics0 = kf(topics, Metadata),
-    Cluster = kf(cluster_id, Metadata, ?undef),
-    Controller = kf(controller_id, Metadata, ?undef),
-    Topics1 =
-        case IsToListUrp of
-            true -> lists:filter(fun is_ur_topic/1, Topics0);
-            false -> Topics0
-        end,
-    Topics = format_topics(Topics1),
-    case Format of
-        json ->
-            JSON = json_encode([
-                {brokers, Brokers},
-                {topics, Topics},
-                {cluster_id, Cluster},
-                {controller_id, Controller}
-            ]),
-            print([JSON, "\n"]);
-        text ->
-            CL =
-                case Cluster of
-                    ?undef -> "";
-                    _ -> io_lib:format("cluster_id: ~s\n", [Cluster])
-                end,
-
-            CT =
-                case Controller of
-                    ?undef -> "";
-                    _ -> io_lib:format("controller: ~p\n", [Controller])
-                end,
-            BL = format_broker_lines(Brokers),
-            TL = format_topics_lines(Topics, IsList),
-            case IsList of
-                true -> print(TL);
-                false -> print([CL, CT, BL, TL])
-            end
-    end.
-
-format_broker_lines(Brokers) ->
-    Header = io_lib:format("brokers [~p]:\n", [length(Brokers)]),
-    F = fun(Broker) ->
-        Id = kf(node_id, Broker),
-        Host = kf(host, Broker),
-        Port = kf(port, Broker),
-        Rack = kf(rack, Broker, <<>>),
-        HostStr = fmt_endpoint({Host, Port}),
-        format_broker_line(Id, Rack, HostStr)
-    end,
-    [Header, lists:map(F, Brokers)].
-
-format_broker_line(Id, Rack, Endpoint) when
-    Rack =:= ?kpro_null orelse Rack =:= <<>>
-->
-    io_lib:format("  ~p: ~s\n", [Id, Endpoint]);
-format_broker_line(Id, Rack, Endpoint) ->
-    io_lib:format("  ~p(~s): ~s\n", [Id, Rack, Endpoint]).
-
-format_topics_lines(Topics, true) ->
-    Header = io_lib:format("topics [~p]:\n", [length(Topics)]),
-    [Header, lists:map(fun format_topic_list_line/1, Topics)];
-format_topics_lines(Topics, false) ->
-    Header = io_lib:format("topics [~p]:\n", [length(Topics)]),
-    [Header, lists:map(fun format_topic_lines/1, Topics)].
-
-format_topic_list_line({Name, Partitions}) when is_list(Partitions) ->
-    io_lib:format("  ~s\n", [Name]);
-format_topic_list_line({Name, ErrorCode}) ->
-    ErrorStr = format_error_code(ErrorCode),
-    io_lib:format("  ~s: [ERROR] ~s\n", [Name, ErrorStr]).
-
-format_topic_lines({Name, Partitions}) when is_list(Partitions) ->
-    Header = io_lib:format("  ~s [~p]:\n", [Name, length(Partitions)]),
-    PartitionsText = format_partitions_lines(Partitions),
-    [Header, PartitionsText];
-format_topic_lines({Name, ErrorCode}) ->
-    ErrorStr = format_error_code(ErrorCode),
-    io_lib:format("  ~s: [ERROR] ~s\n", [Name, ErrorStr]).
-
-format_error_code(E) when is_atom(E) -> atom_to_list(E);
-format_error_code(E) when is_integer(E) -> integer_to_list(E).
-
-format_partitions_lines(Partitions0) ->
-    Partitions1 =
-        lists:map(
-            fun({Pnr, Info}) ->
-                {binary_to_integer(Pnr), Info}
-            end,
-            Partitions0
-        ),
-    Partitions = lists:keysort(1, Partitions1),
-    lists:map(fun format_partition_lines/1, Partitions).
-
-format_partition_lines({Partition, Info}) ->
-    LeaderNodeId = kf(leader, Info),
-    Status = kf(status, Info),
-    Isr = kf(isr, Info),
-    Osr = kf(osr, Info),
-    MaybeWarning =
-        case ?IS_ERROR(Status) of
-            true -> [" [", atom_to_list(Status), "]"];
-            false -> ""
-        end,
-    ReplicaList =
-        case Osr of
-            [] -> format_list(Isr, "");
-            _ -> [format_list(Isr, ""), ",", format_list(Osr, "*")]
-        end,
-    io_lib:format(
-        "~7s: ~2s (~s)~s\n",
-        [
-            integer_to_list(Partition),
-            integer_to_list(LeaderNodeId),
-            ReplicaList,
-            MaybeWarning
-        ]
-    ).
-
-format_list(List, Mark) ->
-    infix(lists:map(fun(I) -> [integer_to_list(I), Mark] end, List), ",").
-
-infix([], _Sep) -> [];
-infix([_] = L, _Sep) -> L;
-infix([H | T], Sep) -> [H, Sep, infix(T, Sep)].
-
-format_topics(Topics) ->
-    TL = lists:map(fun format_topic/1, Topics),
-    lists:keysort(1, TL).
-
-format_topic(Topic) ->
-    TopicName = kf(name, Topic),
-    PL = kf(partitions, Topic),
-    {TopicName, format_partitions(PL)}.
-
-format_partitions(Partitions) ->
-    PL = lists:map(fun format_partition/1, Partitions),
-    lists:keysort(1, PL).
-
-format_partition(P) ->
-    ErrorCode = kf(error_code, P),
-    PartitionNr = kf(partition_index, P),
-    LeaderNodeId = kf(leader_id, P),
-    Replicas = kf(replica_nodes, P),
-    Isr = kf(isr_nodes, P),
-    Data = [
-        {leader, LeaderNodeId},
-        {status, ErrorCode},
-        {isr, Isr},
-        {osr, Replicas -- Isr}
-    ],
-    {integer_to_binary(PartitionNr), Data}.
-
-%% Return true if a topics is under-replicated
-is_ur_topic(Topic) ->
-    ErrorCode = kf(error_code, Topic),
-    Partitions = kf(partition_metadata, Topic),
-    %% when there is an error, we do not know if
-    %% it is under-replicated or not
-    %% return true to alert user
-    ?IS_ERROR(ErrorCode) orelse lists:any(fun is_ur_partition/1, Partitions).
-
-%% Return true if a partition is under-replicated
-is_ur_partition(Partition) ->
-    ErrorCode = kf(error_code, Partition),
-    Replicas = kf(replicas, Partition),
-    Isr = kf(isr, Partition),
-    ?IS_ERROR(ErrorCode) orelse lists:sort(Isr) =/= lists:sort(Replicas).
+infix(List, Sep) -> lists:join(Sep, List).
 
 parse_delimiter("none") -> none;
 parse_delimiter(EscappedStr) -> eval_str(EscappedStr).
@@ -1392,17 +1162,17 @@ print_version() ->
     {_, _, V} = lists:keyfind(brodcli, 1, application:loaded_applications()),
     print([V, "\n"]).
 
-print(IoData) -> io:put_chars(stdio(), IoData).
+print(IoData) ->
+    brodcli_lib:print(IoData).
 
-print(Fmt, Args) -> io:put_chars(stdio(), io_lib:format(Fmt, Args)).
+print(Fmt, Args) ->
+    brodcli_lib:print(Fmt, Args).
 
-stdout(IoData) ->
-    io:put_chars(IoData).
-
-logerr(IoData) -> io:put_chars(stderr(), [?RED, "*** ", IoData, ?RESET]).
+logerr(IoData) ->
+    brodcli_lib:logerr(IoData).
 
 logerr(Fmt, Args) ->
-    io:put_chars(stderr(), io_lib:format(?RED ++ "*** " ++ Fmt ++ ?RESET, Args)).
+    brodcli_lib:logerr(Fmt, Args).
 
 verbose(Fmt, Args) ->
     case erlang:get(brodcli_log_level) >= ?LOG_LEVEL_VERBOSE of
@@ -1414,18 +1184,6 @@ debug(Fmt, Args) ->
     case erlang:get(brodcli_log_level) >= ?LOG_LEVEL_DEBUG of
         true -> logerr("[debug]: " ++ Fmt, Args);
         false -> ok
-    end.
-
-stdio() ->
-    case get(redirect_stdio) of
-        undefined -> user;
-        Other -> Other
-    end.
-
-stderr() ->
-    case get(redirect_stderr) of
-        undefined -> standard_error;
-        Other -> Other
     end.
 
 int(Str) -> list_to_integer(trim(Str)).
@@ -1447,10 +1205,6 @@ parse_brokers(HostsStr) ->
     end,
     shuffle(lists:map(F, string:tokens(HostsStr, ","))).
 
-%% Parse code paths.
-parse_paths(?undef) -> [];
-parse_paths(Str) -> string:tokens(Str, ",").
-
 %% Randomize the order.
 shuffle(L) ->
     RandList = lists:map(fun(_) -> element(3, os:timestamp()) end, L),
@@ -1459,11 +1213,6 @@ shuffle(L) ->
 
 -spec kf(kpro:field_name(), kpro:struct()) -> kpro:field_value().
 kf(FieldName, Struct) -> kpro:find(FieldName, Struct).
-
--spec kf(kpro:field_name(), kpro:struct(), kpro:field_value()) ->
-    kpro:field_value().
-kf(FieldName, Struct, Default) ->
-    kpro:find(FieldName, Struct, Default).
 
 start_client(BootstrapEndpoints, ClientConfig) ->
     {ok, _} = brod_client:start_link(BootstrapEndpoints, ?CLIENT, ClientConfig),
@@ -1481,21 +1230,6 @@ get_kafka_version() ->
             [Major, Minor | _] = string:tokens(Vsn, "."),
             {list_to_integer(Major), list_to_integer(Minor)}
     end.
-
-json_encode(TupleList) ->
-    json:encode(json_map(TupleList)).
-
-json_map(List) when is_list(List) ->
-    case lists:map(fun json_map/1, List) of
-        [{_, _} | _] = R ->
-            maps:from_list(R);
-        R ->
-            R
-    end;
-json_map({Key, Value}) ->
-    {Key, json_map(Value)};
-json_map(X) ->
-    X.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
