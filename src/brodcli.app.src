@@ -1,7 +1,7 @@
 %% -*- mode:erlang -*-
 {application, brodcli, [
     {description, "Apache Kafka Erlang client CLI"},
-    {vsn, "git"},
+    {vsn, "4.3.0"},
     {registered, []},
     {applications, [kernel, stdlib, brod]},
     {licenses, ["Apache License 2.0"]},

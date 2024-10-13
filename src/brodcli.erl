@@ -21,6 +21,9 @@
 -include("brodcli.hrl").
 
 -define(CLIENT, brodcli_client).
+-define(PROGNAME, "brod").
+-define(RED, "\e[31m").
+-define(RESET, "\e[39m").
 
 %% 'halt' is for escript, stop the vm immediately
 %% 'exit' is for testing, we want eunit or ct to be able to capture
@@ -54,6 +57,10 @@ end).
     "  commits: List/describe committed offsets\n"
     "           or force overwrite existing commits\n"
 ).
+-define(MAIN_OPT, [
+    {help, $h, "help", ?undef, "Show usage"},
+    {version, $v, "version", ?undef, "Show version"}
+]).
 
 %% NOTE: bad indentation at the first line is intended
 -define(COMMAND_COMMON_OPTIONS,
@@ -302,22 +309,66 @@ end).
 
 -type command() :: string().
 
+main_usage() ->
+    getopt:usage(?MAIN_OPT, ?PROGNAME, "[command ...]"),
+    stdout(
+        "Commands:\n"
+        "  meta:    Inspect topic metadata\n"
+        "  offset:  Inspect offsets\n"
+        "  fetch:   Fetch messages\n"
+        "  send:    Produce messages\n"
+        "  pipe:    Pipe file or stdin as messages to kafka\n"
+        "  groups:  List/describe consumer group\n"
+        "  commits: List/describe committed offsets\n"
+        "           or force overwrite existing commits\n"
+    ).
+
 main(Args) ->
-    _ = main(Args, halt).
+    nomatch = main_help(Args),
+    nomatch = version(Args),
+    %nomatch = cmd_fetch(Args),
+    main_usage(),
+    halt(1).
+
+main_help(Args) ->
+    case find_bool(["-h", "--help"], Args) of
+        true ->
+            main_usage(),
+            halt(0);
+        false ->
+            nomatch
+    end.
+
+version(Args) ->
+    case find_bool(["-v", "--version"], Args) of
+        true ->
+            print_version(),
+            halt(0);
+        false ->
+            nomatch
+    end.
+
+find_bool([], _) ->
+    false;
+find_bool([Flag | Flags], Args) ->
+    do_find_bool(Flag, Args) orelse find_bool(Flags, Args).
+
+do_find_bool(_, []) ->
+    false;
+do_find_bool(Flag, [Arg | Args]) ->
+    case Flag =:= Arg of
+        true ->
+            true;
+        false ->
+            case hd(Arg) of
+                $- ->
+                    do_find_bool(Flag, Args);
+                _ ->
+                    false
+            end
+    end.
 
 -spec main([string()], halt | exit) -> no_return().
-main(["-h" | _], _Stop) ->
-    print(?MAIN_DOC);
-main(["--help" | _], _Stop) ->
-    print(?MAIN_DOC);
-main(["-v" | _], _Stop) ->
-    print_version();
-main(["--version" | _], _Stop) ->
-    print_version();
-main(["-" ++ _ = Arg | _], Stop) ->
-    logerr("Unknown option: ~s\n", [Arg]),
-    print(?MAIN_DOC),
-    ?STOP(Stop);
 main([Command | _] = Args, Stop) ->
     case lists:keyfind(Command, 1, ?DOCS) of
         {_, Doc} ->
@@ -1313,18 +1364,21 @@ parse(Args, OptName, ParseFun) ->
     end.
 
 print_version() ->
-    _ = application:load(brod),
-    {_, _, V} = lists:keyfind(brod, 1, application:loaded_applications()),
+    _ = application:load(brodcli),
+    {_, _, V} = lists:keyfind(brodcli, 1, application:loaded_applications()),
     print([V, "\n"]).
 
 print(IoData) -> io:put_chars(stdio(), IoData).
 
 print(Fmt, Args) -> io:put_chars(stdio(), io_lib:format(Fmt, Args)).
 
-logerr(IoData) -> io:put_chars(stderr(), ["*** ", IoData]).
+stdout(IoData) ->
+    io:put_chars(IoData).
+
+logerr(IoData) -> io:put_chars(stderr(), [?RED, "*** ", IoData, ?RESET]).
 
 logerr(Fmt, Args) ->
-    io:put_chars(stderr(), io_lib:format("*** " ++ Fmt, Args)).
+    io:put_chars(stderr(), io_lib:format(?RED ++ "*** " ++ Fmt ++ ?RESET, Args)).
 
 verbose(Fmt, Args) ->
     case erlang:get(brodcli_log_level) >= ?LOG_LEVEL_VERBOSE of
