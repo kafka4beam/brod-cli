@@ -1,5 +1,5 @@
 %%%   Copyright (c) 2017-2021 Klarna Bank AB (publ)
-%%%   Copyright (c) 2024 Kafka4Beam contributors
+%%%   Copyright (c) 2024 zmstone
 %%%
 %%%   Licensed under the Apache License, Version 2.0 (the "License");
 %%%   you may not use this file except in compliance with the License.
@@ -312,7 +312,7 @@ end).
 main_usage() ->
     getopt:usage(?MAIN_OPT, ?PROGNAME, "[command ...]"),
     stdout(
-        "Commands:\n"
+        "commands:\n"
         "  meta:    Inspect topic metadata\n"
         "  offset:  Inspect offsets\n"
         "  fetch:   Fetch messages\n"
@@ -326,8 +326,20 @@ main_usage() ->
 main(Args) ->
     nomatch = main_help(Args),
     nomatch = version(Args),
-    %nomatch = cmd_fetch(Args),
-    main_usage(),
+    nomatch = cmd("meta", Args),
+    nomatch = cmd("offset", Args),
+    nomatch = cmd("send", Args),
+    nomatch = cmd("pipe", Args),
+    nomatch = cmd("groups", Args),
+    nomatch = cmd("commits", Args),
+    case Args of
+        [] ->
+            main_usage();
+        ["-" ++ _ = Opt | _] ->
+            logerr("Unknown option: ~ts~n", [Opt]);
+        [Cmd | _] ->
+            logerr("Unknown command: ~ts~n", [Cmd])
+    end,
     halt(1).
 
 main_help(Args) ->
@@ -367,6 +379,18 @@ do_find_bool(Flag, [Arg | Args]) ->
                     false
             end
     end.
+
+%% The main function calls this /2 implementation, stop with erlang:halt
+cmd(Cmd, Args) ->
+    cmd(Cmd, Args, halt).
+
+%% The thrid arg can be `exit' in tests.
+cmd(Cmd, [Cmd | Args], Stop) ->
+    Module = list_to_atom("brodcli_" ++ Cmd),
+    ok = Module:main(Args),
+    ?STOP(Stop);
+cmd(_, _, _) ->
+    nomatch.
 
 -spec main([string()], halt | exit) -> no_return().
 main([Command | _] = Args, Stop) ->
