@@ -15,7 +15,7 @@
 
 -module(brodcli_send).
 
--export([help/0, main/2]).
+-export([opts/0, help/0, main/3]).
 
 -include("brodcli.hrl").
 
@@ -49,12 +49,7 @@ opts() ->
 help() ->
     getopt:usage(opts(), ?PROGRAM).
 
-main(Args, Stop) ->
-    Parsed = brodcli_lib:parse_cmd_args(opts(), Args, Stop),
-    ok = brodcli_lib:with_brod(Parsed, Stop, fun do/3),
-    ?STOP(Stop, 0).
-
-do(Args, Brokers, ConnConfig) ->
+main(Args, Brokers, ConnConfig) ->
     Topic = topic(Args),
     Partition = partition(Args),
     Acks = acks(Args),
@@ -78,8 +73,22 @@ do(Args, Brokers, ConnConfig) ->
         ],
     ok = start_client(Brokers, ClientConfig),
     Msgs = [{brod_utils:epoch_ms(), Key, Value}],
-    ok = brod:produce_sync(?CLIENT, Topic, Partition, <<>>, Msgs),
-    ok.
+    Self = self(),
+    Cb = fun(P, O) -> Self ! {acked_by_kafka, P, O} end,
+    case brod:produce_cb(?CLIENT, Topic, Partition, <<>>, Msgs, Cb) of
+        ok ->
+            wait_for_ack();
+        {ok, _} ->
+            wait_for_ack();
+        {error, Reason} ->
+            brodcli_lib:logerr("~p~n", [Reason])
+    end.
+
+wait_for_ack() ->
+    receive
+        {acked_by_kafka, P, O} ->
+            brodcli_lib:print("Produced to partition: ~w, at offset: ~w~n", [P, O])
+    end.
 
 start_client(BootstrapEndpoints, ClientConfig) ->
     {ok, _} = brod_client:start_link(BootstrapEndpoints, ?CLIENT, ClientConfig),

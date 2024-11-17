@@ -15,7 +15,7 @@
 
 -module(brodcli_meta).
 
--export([help/0, main/2]).
+-export([opts/0, help/0, main/3]).
 
 -include("brodcli.hrl").
 
@@ -46,12 +46,7 @@ help() ->
     getopt:usage(opts(), ?PROGRAM),
     io:format(standard_error, "~s~n", [?EXTRA_INFO]).
 
-main(Args, Stop) ->
-    Parsed = brodcli_lib:parse_cmd_args(opts(), Args, Stop),
-    ok = brodcli_lib:with_brod(Parsed, Stop, fun do/3),
-    ?STOP(Stop, 0).
-
-do(Args, Brokers, ConnConfig) ->
+main(Args, Brokers, ConnConfig) ->
     Topic = bin(proplists:get_value(topic, Args)),
     Topics =
         case Topic of

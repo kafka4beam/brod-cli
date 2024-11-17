@@ -301,7 +301,10 @@ cmd(Cmd, [Cmd | Args], Stop) ->
             ok = Module:help(),
             ?STOP(Stop, 0);
         false ->
-            ok = Module:main(Args, Stop)
+            CmdOpts = Module:opts(),
+            Parsed = brodcli_lib:parse_cmd_args(CmdOpts, Args, Stop),
+            ok = brodcli_lib:with_brod(Parsed, Stop, fun Module:main/3),
+            ?STOP(Stop, 0)
     end;
 cmd(_, _, _) ->
     nomatch.

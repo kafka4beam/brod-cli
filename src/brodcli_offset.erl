@@ -15,7 +15,7 @@
 
 -module(brodcli_offset).
 
--export([help/0, main/2]).
+-export([opts/0, help/0, main/3]).
 
 -include("brodcli.hrl").
 
@@ -37,12 +37,7 @@ opts() ->
 help() ->
     getopt:usage(opts(), ?PROGRAM).
 
-main(Args, Stop) ->
-    Parsed = brodcli_lib:parse_cmd_args(opts(), Args, Stop),
-    ok = brodcli_lib:with_brod(Parsed, Stop, fun do/3),
-    ?STOP(Stop, 0).
-
-do(Args, Brokers, ConnConfig) ->
+main(Args, Brokers, ConnConfig) ->
     Partition =
         case proplists:get_value(partition, Args) of
             ("*") -> all;
