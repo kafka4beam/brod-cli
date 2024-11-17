@@ -88,38 +88,6 @@
     "NOTE: Reaching either --count or --wait limit will cause script to exit\n"
 ).
 
--define(SEND_CMD, "send").
--define(SEND_DOC,
-    "usage:\n"
-    "  brod send [options]\n"
-    "\n"
-    "options:\n"
-    "  -b,--brokers=<brokers> Comma separated host:port pairs\n"
-    "                         [default: localhost:9092]\n"
-    "  -t,--topic=<topic>     Topic name\n"
-    "  -p,--partition=<parti> Partition number [default: 0]\n"
-    "                         Special values:\n"
-    "                           random: randomly pick a partition\n"
-    "                           hash: hash key to a partition\n"
-    "  -k,--key=<key>         Key to produce [default: null]\n"
-    "  -v,--value=<value>     Value to produce. Special values:\n"
-    "                           null: No payload\n"
-    "                           @/path/to/file: Send a whole file as payload\n"
-    "  --acks=<acks>          Required acks. Supported values:\n"
-    "                           all or -1: Require acks from all in-sync replica\n"
-    "                           1: Require acks from only partition leader\n"
-    "                           0: Require no acks\n"
-    "                         [default: all]\n"
-    "  --ack-timeout=<time>   How long the partition leader should wait for replicas\n"
-    "                         to ack before sending response to producer\n"
-    "                         The value can be an integer to indicate number of\n"
-    "                         milliseconds or followed by s/m to indicate seconds\n"
-    "                         or minutes [default: 10s]\n"
-    "  --compression=<compre> Supported values: none / gzip / snappy\n"
-    "                         [default: none]\n"
-    ?COMMAND_COMMON_OPTIONS
-).
-
 -define(PIPE_CMD, "pipe").
 -define(PIPE_DOC,
     "usage:\n"
@@ -464,44 +432,6 @@ run(?FETCH_CMD, Brokers, Topic, ConnOpts, Args) ->
     logerr("Fetch loop stopped after ~p messages~n", [FetchedCount]),
     logerr("Continue at Offset: ~p~n", [NextOffset]),
     logerr("Reason: ~p~n", [Reason]);
-run(?SEND_CMD, Brokers, Topic, SockOpts, Args) ->
-    Partition = parse(Args, "--partition", fun parse_partition/1),
-    Acks = parse(Args, "--acks", fun parse_acks/1),
-    AckTimeout = parse(Args, "--ack-timeout", fun parse_timeout/1),
-    Compression = parse(Args, "--compression", fun parse_compression/1),
-    Key = parse(Args, "--key", fun
-        ("null") -> <<"">>;
-        (K) -> bin(K)
-    end),
-    Value0 = parse(Args, "--value", fun
-        ("null") -> <<"">>;
-        ("@" ++ F) -> {file, F};
-        (V) -> bin(V)
-    end),
-    Value =
-        case Value0 of
-            {file, File} ->
-                {ok, Bin} = file:read_file(File),
-                Bin;
-            <<_/binary>> ->
-                Value0
-        end,
-    ProducerConfig =
-        [
-            {required_acks, Acks},
-            {ack_timeout, AckTimeout},
-            {compression, Compression},
-            {min_compression_batch_size, 0},
-            {max_linger_ms, 0}
-        ],
-    ClientConfig =
-        [
-            {auto_start_producers, true},
-            {default_producer_config, ProducerConfig}
-        ] ++ SockOpts,
-    ok = start_client(Brokers, ClientConfig),
-    Msgs = [{brod_utils:epoch_ms(), Key, Value}],
-    ok = brod:produce_sync(?CLIENT, Topic, Partition, <<>>, Msgs);
 run(?PIPE_CMD, Brokers, Topic, SockOpts, Args) ->
     Partition = parse(Args, "--partition", fun parse_partition/1),
     Acks = parse(Args, "--acks", fun parse_acks/1),
