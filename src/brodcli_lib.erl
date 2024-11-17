@@ -41,7 +41,10 @@ common_opts() ->
             "Specify SSL versions. Comma separated versions, e.g. '1.3,1.2'."},
         {ssl_cacertfile, ?undef, "cacertfile", {string, ""},
             "Validate server using the given PEM file containing trusted CA certifcates."},
-        {ssl_certfile, ?undef, "certfile", {string, ""}, "Client certificate PEM file."},
+        {ssl_certfile, ?undef, "certfile", {string, ""},
+            "Client certificate PEM file. "
+            "If the certificate is not directly issued by the root CA, "
+            "the certificate should be followed by intermediate CA certificates to form the certificate chain."},
         {ssl_keyfile, ?undef, "keyfile", {string, ""}, "Client private key PEM file."},
         {auth_mechanism, ?undef, "auth-mech", {atom, none},
             "Authentication mechanism: 'none' | 'plain' | 'scram256' | 'scram512'."},

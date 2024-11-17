@@ -47,28 +47,6 @@
     "                         the same effect\n"
 ).
 
--define(OFFSET_CMD, "offset").
--define(OFFSET_DOC,
-    "usage:\n"
-    "  brod offset [options]\n"
-    "\n"
-    "options:\n"
-    "  -b,--brokers=<brokers> Comma separated host:port pairs\n"
-    "                         [default: localhost:9092]\n"
-    "  -t,--topic=<topic>     Topic name\n"
-    "  -p,--partition=<parti> Partition number\n"
-    "                         [default: all]\n"
-    "  -T,--time=<time>       Unix epoch (in milliseconds) of the correlated offset\n"
-    "                         to fetch. Special values:\n"
-    "                           'latest' or -1 for latest offset\n"
-    "                           'earliest' or -2 for earliest offset\n"
-    "                         [default: latest]\n"
-    "  --one-line             If it is to resolve 'all' offsets,\n"
-    "                         Print results in one line.\n"
-    "                         e.g. 0:111,1:222\n"
-    ?COMMAND_COMMON_OPTIONS
-).
-
 -define(FETCH_CMD, "fetch").
 -define(FETCH_DOC,
     "usage:\n"
@@ -232,7 +210,6 @@
 ).
 
 -define(DOCS, [
-    {?OFFSET_CMD, ?OFFSET_DOC},
     {?SEND_CMD, ?SEND_DOC},
     {?FETCH_CMD, ?FETCH_DOC},
     {?PIPE_CMD, ?PIPE_DOC},
@@ -351,7 +328,7 @@ cmd(Cmd, Args) ->
 cmd(Cmd, [Cmd | Args], Stop) ->
     Module = list_to_atom("brodcli_" ++ Cmd),
     %% call Module:help if --help is found
-    case find_bool_main_args(["-h", "--help"], Args) of
+    case lists:member("--help", Args) orelse lists:member("-h", Args) of
         true ->
             ok = Module:help(),
             ?STOP(Stop, 0);
@@ -435,19 +412,6 @@ main(Command, Doc, Args, Stop, LogLevel) ->
             ?STOP(Stop, 2)
     end.
 
-run(?OFFSET_CMD, Brokers, Topic, SockOpts, Args) ->
-    Partition = parse(Args, "--partition", fun
-        ("all") -> all;
-        (Num) -> int(Num)
-    end),
-    IsOneLine = parse(Args, "--one-line", fun parse_boolean/1),
-    Time = parse(Args, "--time", fun parse_offset_time/1),
-    ok = start_client(Brokers, SockOpts),
-    try
-        resolve_offsets_print(Topic, Partition, Time, IsOneLine)
-    after
-        brod_client:stop(?CLIENT)
-    end;
 run(?FETCH_CMD, Brokers, Topic, ConnOpts, Args) ->
     %% not parse_partition/1
     Partition = parse(Args, "--partition", fun int/1),
@@ -620,25 +584,6 @@ run(Cmd, Brokers, SockOpts, Args) ->
     %% Clause for all per-topic commands
     Topic = parse(Args, "--topic", fun bin/1),
     run(Cmd, Brokers, Topic, SockOpts, Args).
-
-resolve_offsets_print(Topic, all, Time, IsOneLine) ->
-    Offsets = resolve_offsets(Topic, Time),
-    Outputs =
-        lists:map(
-            fun({Partition, Offset}) ->
-                io_lib:format("~p:~p", [Partition, Offset])
-            end,
-            Offsets
-        ),
-    Delimiter =
-        case IsOneLine of
-            true -> ",";
-            false -> "\n"
-        end,
-    print(infix(Outputs, Delimiter));
-resolve_offsets_print(Topic, Partition, Time, _) when is_integer(Partition) ->
-    {ok, Offset} = resolve_offset(Topic, Partition, Time),
-    print(integer_to_list(Offset)).
 
 resolve_offsets(Topic, Time) ->
     {ok, Count} = brod_client:get_partitions_count(?CLIENT, Topic),
@@ -1078,7 +1023,6 @@ parse_connection_config(Args) ->
                         {certfile, CertFile},
                         {keyfile, KeyFile},
                         {versions, SslVersions},
-                        %% TODO: verify_peer if cacertfile is provided
                         {verify, verify_none}
                     ],
                 lists:filter(FilterPred, Opts);
