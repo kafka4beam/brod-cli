@@ -18,7 +18,7 @@ The executable is here: `_build/default/rel/brod/bin/brod`
 
 The release includes Erlang runtime (erts), but not guarenteed to be portable between different Linux distributions or versions.
 
-In the release directory, `bin/bord` is the main command.
+In the release directory, `bin/brod` is the main command.
 
 To start an Erlang REPL shell with all the `brod` APIs to play with, execute `bin/brod-i console`.
 
